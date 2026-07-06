@@ -1,0 +1,98 @@
+.ai-summary-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ai-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.ai-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.ai-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  color: white;
+  display: grid;
+  place-items: center;
+}
+
+.ai-summary-header h2 {
+  margin: 0;
+  color: #0f172a;
+}
+
+.ai-generate-btn {
+  border: none;
+  border-radius: 14px;
+  padding: 11px 15px;
+  background: #0f172a;
+  color: white;
+  font-weight: 800;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-generate-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ai-empty-state {
+  flex: 1;
+  border: 1px dashed #cbd5e1;
+  border-radius: 20px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: #64748b;
+  padding: 26px;
+}
+
+.ai-empty-state h3 {
+  margin: 12px 0 6px;
+  color: #0f172a;
+}
+
+.ai-empty-state p {
+  margin: 0;
+  max-width: 320px;
+  line-height: 1.6;
+}
+
+.ai-summary-content {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 300px;
+  white-space: pre-wrap;
+  line-height: 1.7;
+  padding: 18px;
+  border-radius: 16px;
+  background: #fafafa;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

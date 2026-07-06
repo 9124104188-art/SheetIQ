@@ -1,0 +1,61 @@
+.app-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: none;
+  border-radius: 14px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .25s ease;
+}
+
+.app-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.app-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.app-btn.primary {
+  background: linear-gradient(135deg,#2563eb,#3b82f6);
+  color: white;
+}
+
+.app-btn.primary:hover {
+  box-shadow: 0 12px 24px rgba(37,99,235,.35);
+}
+
+.app-btn.secondary {
+  background: white;
+  border: 1px solid #dbeafe;
+  color: #2563eb;
+}
+
+.app-btn.secondary:hover {
+  background: #eff6ff;
+}
+
+.app-btn.success {
+  background: linear-gradient(135deg,#16a34a,#22c55e);
+  color: white;
+}
+
+.app-btn.danger {
+  background: linear-gradient(135deg,#dc2626,#ef4444);
+  color: white;
+}
+
+.spin {
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
