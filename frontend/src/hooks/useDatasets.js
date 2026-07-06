@@ -1,6 +1,59 @@
-
-import { useEffect, useState } from "react";
+/* eslint-disable no-control-regex */
+/* eslint-disable no-unsafe-finally */
+/* eslint-disable react-hooks/set-state-in-effect */
+import { useEffect, useState, useRef, useCallback } from "react";
 import api from "../api/axios";
+
+const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+const ALLOWED_MIME_TYPES = [
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+];
+
+function safeErrorMessage(error, fallbackMessage) {
+  if (!error) return fallbackMessage;
+
+  const responseData = error.response?.data;
+  if (typeof responseData?.message === "string" && responseData.message.trim()) {
+    return responseData.message;
+  }
+
+  if (typeof error.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+
+  return fallbackMessage;
+}
+
+async function parseBlobErrorMessage(error, fallbackMessage) {
+  const data = error?.response?.data;
+
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text();
+      const parsed = JSON.parse(text);
+      if (typeof parsed?.message === "string" && parsed.message.trim()) {
+        return parsed.message;
+      }
+      if (typeof text === "string" && text.trim()) {
+        return text;
+      }
+    } catch {
+      // ignore parse errors and fall through
+    }
+  }
+
+  return safeErrorMessage(error, fallbackMessage);
+}
+
+function sanitizeFileName(name = "dataset") {
+  return String(name)
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_")
+    .replace(/\s+/g, "-")
+    .slice(0, 120) || "dataset";
+}
 
 function useDatasets() {
   const [datasets, setDatasets] = useState([]);
@@ -10,140 +63,234 @@ function useDatasets() {
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const [loadingDatasets, setLoadingDatasets] = useState(true);
 
-  const fetchDatasetById = async (id) => {
+  const isMountedRef = useRef(true);
+  const latestFetchIdRef = useRef(0);
+
+  const safeSetState = useCallback((setter) => {
+    if (isMountedRef.current) {
+      setter();
+    }
+  }, []);
+
+  const fetchDatasets = useCallback(async () => {
+    const requestId = ++latestFetchIdRef.current;
+
+    safeSetState(() => {
+      setLoadingDatasets(true);
+      setError("");
+    });
+
+    try {
+      const res = await api.get("/datasets");
+
+      // ignore stale responses
+      if (!isMountedRef.current || requestId !== latestFetchIdRef.current) return;
+
+      const nextDatasets = Array.isArray(res.data?.datasets) ? res.data.datasets : [];
+      setDatasets(nextDatasets);
+
+      // keep selected dataset in sync if it still exists in refreshed list
+      setSelectedDataset((prev) => {
+        if (!prev?._id) return prev;
+        const updatedSelected = nextDatasets.find((d) => d?._id === prev._id);
+        return updatedSelected || null;
+      });
+    } catch (err) {
+      if (!isMountedRef.current || requestId !== latestFetchIdRef.current) return;
+      setError(safeErrorMessage(err, "Failed to fetch datasets"));
+    } finally {
+      if (!isMountedRef.current || requestId !== latestFetchIdRef.current) return;
+      setLoadingDatasets(false);
+    }
+  }, [safeSetState]);
+
+  const fetchDatasetById = useCallback(async (id) => {
+    if (!id) {
+      setError("Dataset ID is required");
+      return;
+    }
+
+    setError("");
+
     try {
       const res = await api.get(`/datasets/${id}`);
-      setSelectedDataset(res.data.dataset);
-    } catch (error) {
-      setError(error.response?.data?.message || "Failed to fetch dataset");
-    }
-  };
+      if (!isMountedRef.current) return;
 
-  const handleGenerateSummary = async (id) => {
-  try {
+      const dataset = res.data?.dataset || null;
+      setSelectedDataset(dataset);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setError(safeErrorMessage(err, "Failed to fetch dataset"));
+    }
+  }, []);
+
+  const handleGenerateSummary = useCallback(async (id) => {
+    if (!id) {
+      setError("Dataset ID is required to generate summary");
+      return;
+    }
+
     setGeneratingSummary(true);
     setError("");
 
-    const res = await api.post(`/datasets/${id}/summary`);
+    try {
+      const res = await api.post(`/datasets/${id}/summary`);
+      if (!isMountedRef.current) return;
 
-    setSelectedDataset((prev) => ({
-      ...prev,
-      aiSummary: res.data.aiSummary,
-    }));
-  } catch (error) {
-    setError(error.response?.data?.message || "Failed to generate summary");
-  } finally {
-    setGeneratingSummary(false);
-  }
-};
+      const aiSummary = res.data?.aiSummary ?? "";
+      setSelectedDataset((prev) => {
+        if (!prev) return prev;
+        if (prev._id !== id) return prev;
+        return {
+          ...prev,
+          aiSummary,
+        };
+      });
 
-  const fetchDatasets = async () => {
-  try {
-    setLoadingDatasets(true);
-    setError("");
+      // keep list metadata fresh in case backend updates summary-related fields
+      await fetchDatasets();
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setError(safeErrorMessage(err, "Failed to generate summary"));
+    } finally {
+      if (!isMountedRef.current) return;
+      setGeneratingSummary(false);
+    }
+  }, [fetchDatasets]);
 
-    const res = await api.get("/datasets");
-    setDatasets(res.data.datasets);
-  } catch (error) {
-    setError(error.response?.data?.message || "Failed to fetch datasets");
-  } finally {
-    setLoadingDatasets(false);
-  }
-};
+  const handleUpload = useCallback(async (input) => {
+    const file = input?.target?.files?.[0] || input;
 
- const handleUpload = async (input) => {
-  const file = input?.target?.files?.[0] || input;
+    if (!file) return;
 
-  if (!file) return;
+    // client-side validations
+    if (
+      file.type &&
+      !ALLOWED_MIME_TYPES.includes(file.type) &&
+      !/\.(csv|xlsx|xls)$/i.test(file.name || "")
+    ) {
+      setError("Unsupported file type. Please upload CSV or Excel files.");
+      if (input?.target) input.target.value = "";
+      return;
+    }
 
-  try {
+    if (typeof file.size === "number" && file.size > MAX_UPLOAD_SIZE_BYTES) {
+      setError("File is too large. Maximum allowed size is 10MB.");
+      if (input?.target) input.target.value = "";
+      return;
+    }
+
     setUploading(true);
     setError("");
 
-    const formData = new FormData();
-    formData.append("file", file);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
 
-    const res = await api.post("/datasets/upload", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
+      const res = await api.post("/datasets/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      });
 
-    setSelectedDataset(res.data.dataset);
-    await fetchDatasets();
-  } catch (error) {
-    setError(error.response?.data?.message || "Upload failed");
-  } finally {
-    setUploading(false);
+      if (!isMountedRef.current) return;
 
-    if (input?.target) {
-      input.target.value = "";
+      const uploadedDataset = res.data?.dataset || null;
+      setSelectedDataset(uploadedDataset);
+      await fetchDatasets();
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setError(safeErrorMessage(err, "Upload failed"));
+    } finally {
+      if (!isMountedRef.current) return;
+      setUploading(false);
+
+      if (input?.target) {
+        input.target.value = "";
+      }
     }
-  }
-};
+  }, [fetchDatasets]);
 
-  const handleDeleteDataset = async (id) => {
-    const confirmDelete = window.confirm(
-      "Are you sure you want to delete this dataset?"
-    );
+  const handleDeleteDataset = useCallback(async (id) => {
+    if (!id) {
+      setError("Dataset ID is required to delete dataset");
+      return;
+    }
 
-    if (!confirmDelete) return;
+    try {
+      setError("");
+      await api.delete(`/datasets/${id}`);
+
+      if (!isMountedRef.current) return;
+
+      setDatasets((prev) => prev.filter((d) => d?._id !== id));
+      setSelectedDataset((prevSelected) =>
+        prevSelected?._id === id ? null : prevSelected
+      );
+
+      await fetchDatasets();
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      setError(safeErrorMessage(err, "Failed to delete dataset"));
+    }
+  }, [fetchDatasets]);
+
+  const handleExportCSV = useCallback(async (id, fileName = "dataset") => {
+    if (!id) {
+      setError("Dataset ID is required to export CSV");
+      return;
+    }
 
     try {
       setError("");
 
-      await api.delete(`/datasets/${id}`);
+      const res = await api.get(`/datasets/${id}/export/csv`, {
+        responseType: "blob",
+      });
 
-      if (selectedDataset?._id === id) {
-        setSelectedDataset(null);
-      }
+      if (!isMountedRef.current) return;
 
-      await fetchDatasets();
-    } catch (error) {
-      setError(error.response?.data?.message || "Failed to delete dataset");
+      const blob = new Blob([res.data], { type: "text/csv" });
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${sanitizeFileName(fileName)}-export.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      const message = await parseBlobErrorMessage(err, "Failed to export CSV");
+      setError(message);
     }
-  };
-  const handleExportCSV = async (id, fileName = "dataset") => {
-  try {
-    setError("");
-
-    const res = await api.get(`/datasets/${id}/export/csv`, {
-      responseType: "blob",
-    });
-
-    const blob = new Blob([res.data], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${fileName}-export.csv`;
-    link.click();
-
-    window.URL.revokeObjectURL(url);
-  } catch (error) {
-    setError(error.response?.data?.message || "Failed to export CSV");
-  }
-};
-
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchDatasets();
   }, []);
 
- return {
-  datasets,
-  selectedDataset,
-  uploading,
-  error,
-  loadingDatasets,
-  fetchDatasets,
-  fetchDatasetById,
-  handleUpload,
-  handleDeleteDataset,
-  generatingSummary,
-  handleGenerateSummary,
-  handleExportCSV,
-};
+  useEffect(() => {
+    isMountedRef.current = true;
+    fetchDatasets();
+
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, [fetchDatasets]);
+
+  return {
+    datasets,
+    selectedDataset,
+    uploading,
+    error,
+    loadingDatasets,
+    fetchDatasets,
+    fetchDatasetById,
+    handleUpload,
+    handleDeleteDataset,
+    generatingSummary,
+    handleGenerateSummary,
+    handleExportCSV,
+  };
 }
 
 export default useDatasets;

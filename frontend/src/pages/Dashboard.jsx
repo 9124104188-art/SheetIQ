@@ -1,5 +1,6 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import useDatasets from "../hooks/useDatasets";
 
 import Sidebar from "../components/Sidebar";
@@ -22,210 +23,232 @@ import {
   getChartData,
 } from "../utils/dashboardHelpers";
 
-import {
-  FaDatabase,
-  FaColumns,
-  FaTags,
-  FaFolderOpen,
-} from "react-icons/fa";
+import { FaDatabase, FaColumns, FaTags, FaFolderOpen } from "react-icons/fa";
+
+const FREE_TIER_DATASET_LIMIT = 5;
+
+function safeParseUser(rawUser) {
+  if (!rawUser) return null;
+  try {
+    const parsed = JSON.parse(rawUser);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 function Dashboard() {
   const [searchText, setSearchText] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
 
- const {
-  datasets,
-  selectedDataset,
-  uploading,
-  error,
-  loadingDatasets,
-  fetchDatasetById,
-  handleUpload,
-  handleDeleteDataset,
-  generatingSummary,
-  handleGenerateSummary,
-  handleExportCSV,
-} = useDatasets();
+  const {
+    datasets,
+    selectedDataset,
+    uploading,
+    error,
+    loadingDatasets,
+    fetchDatasetById,
+    handleUpload,
+    handleDeleteDataset,
+    generatingSummary,
+    handleGenerateSummary,
+    handleExportCSV,
+  } = useDatasets();
 
   const navigate = useNavigate();
-  const user = JSON.parse(localStorage.getItem("user"));
 
+  const user = useMemo(() => safeParseUser(localStorage.getItem("user")), []);
   const rowsPerPage = 5;
 
-  const allRows = selectedDataset?.rows || [];
-  const allColumns = selectedDataset?.columns || [];
+  const allRows = selectedDataset?.rows ?? [];
+  const allColumns = selectedDataset?.columns ?? [];
 
-  const filteredRows = getFilteredRows(allRows, searchText);
-  const totalPages = Math.ceil(filteredRows.length / rowsPerPage) || 1;
-  const paginatedRows = getPaginatedRows(
-    filteredRows,
-    currentPage,
-    rowsPerPage
+  const filteredRows = useMemo(
+    () => getFilteredRows(allRows, searchText),
+    [allRows, searchText]
   );
 
-  const { chartData, chartLabelKey, chartValueKey } = getChartData(
-    allRows,
-    allColumns
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(filteredRows.length / rowsPerPage)),
+    [filteredRows.length, rowsPerPage]
   );
 
-  const handleSearchChange = (value) => {
+  useEffect(() => {
+    setCurrentPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [selectedDataset?._id]);
+
+  const paginatedRows = useMemo(
+    () => getPaginatedRows(filteredRows, currentPage, rowsPerPage),
+    [filteredRows, currentPage, rowsPerPage]
+  );
+
+  const { chartData, chartLabelKey, chartValueKey } = useMemo(
+    () => getChartData(allRows, allColumns),
+    [allRows, allColumns]
+  );
+
+  const handleSearchChange = useCallback((value) => {
     setSearchText(value);
     setCurrentPage(1);
-  };
+  }, []);
 
-  const handlePrevPage = () => {
+  const handlePrevPage = useCallback(() => {
     setCurrentPage((prev) => Math.max(prev - 1, 1));
-  };
+  }, []);
 
-  const handleNextPage = () => {
+  const handleNextPage = useCallback(() => {
     setCurrentPage((prev) => Math.min(prev + 1, totalPages));
-  };
+  }, [totalPages]);
 
-  const handleLogout = () => {
+  const onExportCSV = useCallback(() => {
+    if (!selectedDataset?._id || !selectedDataset?.name) return;
+    handleExportCSV(selectedDataset._id, selectedDataset.name);
+  }, [handleExportCSV, selectedDataset]);
+
+  const handleLogout = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     navigate("/login");
-  };
+  }, [navigate]);
 
   return (
-  <div className="dashboard-shell">
-    <Sidebar datasetCount={datasets.length} />
+    <div className="dashboard-shell">
+      <Sidebar datasetCount={datasets.length} />
 
-    <main className="dashboard-main">
-      <DashboardHeader user={user} onLogout={handleLogout} />
+      <main className="dashboard-main" aria-label="Dashboard main content">
+        <DashboardHeader user={user} onLogout={handleLogout} />
 
-      {loadingDatasets ? (
-        <DashboardSkeleton />
-      ) : (
-        <>
-          <section className="top-workspace-grid">
-            <UploadPanel onUpload={handleUpload} uploading={uploading} />
+        {loadingDatasets ? (
+          <DashboardSkeleton />
+        ) : (
+          <>
+            <section className="top-workspace-grid">
+              <UploadPanel onUpload={handleUpload} uploading={uploading} />
 
-           <div className="quick-actions card">
-  <div>
-    <p className="eyebrow">Quick Actions</p>
-    <h2>Dataset Tools</h2>
-  </div>
+              <div className="quick-actions card">
+                <div>
+                  <p className="eyebrow">Quick Actions</p>
+                  <h2>Dataset Tools</h2>
+                </div>
 
-  <div className="selected-dataset-box">
-    <p>Selected Dataset</p>
+                <div className="selected-dataset-box">
+                  <p>Selected Dataset</p>
 
-    <strong>
-      {selectedDataset?.name || "No dataset selected"}
-    </strong>
+                  <strong>{selectedDataset?.name || "No dataset selected"}</strong>
 
-    <span>
-      {selectedDataset
-        ? `${selectedDataset.rowCount} rows • ${selectedDataset.columnCount} columns`
-        : "Upload or select a dataset"}
-    </span>
-  </div>
+                  <span>
+                    {selectedDataset
+                      ? `${selectedDataset.rowCount} rows • ${selectedDataset.columnCount} columns`
+                      : "Upload or select a dataset"}
+                  </span>
+                </div>
 
-  <Button
-    variant="secondary"
-    icon={<Download size={18} />}
-    disabled={!selectedDataset}
-    onClick={() =>
-      handleExportCSV(selectedDataset._id, selectedDataset.name)
-    }
-  >
-    Export CSV
-  </Button>
+                <Button
+                  variant="secondary"
+                  icon={<Download size={18} />}
+                  disabled={!selectedDataset}
+                  onClick={onExportCSV}
+                >
+                  Export CSV
+                </Button>
 
-  <div className="quick-info">
-    <div>
-      <small>Report Type</small>
-      <strong>{selectedDataset?.reportType || "-"}</strong>
-    </div>
+                <div className="quick-info">
+                  <div>
+                    <small>Report Type</small>
+                    <strong>{selectedDataset?.reportType || "-"}</strong>
+                  </div>
 
-    <div>
-      <small>Status</small>
-      <strong>
-        {selectedDataset ? "Ready" : "Waiting"}
-      </strong>
-    </div>
-  </div>
+                  <div>
+                    <small>Status</small>
+                    <strong>{selectedDataset ? "Ready" : "Waiting"}</strong>
+                  </div>
+                </div>
 
-  <p className="quick-help">
-    Download the selected dataset as a CSV file.
-  </p>
-</div>
+                <p className="quick-help">
+                  Download the selected dataset as a CSV file.
+                </p>
+              </div>
+            </section>
 
-          </section>
+            {error && (
+              <div className="dashboard-error" role="alert" aria-live="polite">
+                {error}
+              </div>
+            )}
 
-          {error && <div className="dashboard-error">{error}</div>}
+            <section className="kpi-grid">
+              <KPICard
+                title="Total Rows"
+                value={selectedDataset?.rowCount || 0}
+                subtitle="Ready to analyze"
+                icon={<FaDatabase />}
+                color="#8b5cf6"
+              />
 
-          <section className="kpi-grid">
+              <KPICard
+                title="Columns"
+                value={selectedDataset?.columnCount || 0}
+                subtitle="Auto detected"
+                icon={<FaColumns />}
+                color="#2563eb"
+              />
 
-<KPICard
-title="Total Rows"
-value={selectedDataset?.rowCount || 0}
-subtitle="Ready to analyze"
-icon={<FaDatabase />}
-color="#8b5cf6"
-/>
+              <KPICard
+                title="Report Type"
+                value={selectedDataset?.reportType || "Custom"}
+                subtitle="AI classified"
+                icon={<FaTags />}
+                color="#22c55e"
+              />
 
-<KPICard
-title="Columns"
-value={selectedDataset?.columnCount || 0}
-subtitle="Auto detected"
-icon={<FaColumns />}
-color="#2563eb"
-/>
+              <KPICard
+                title="Datasets"
+                value={`${datasets.length} / ${FREE_TIER_DATASET_LIMIT}`}
+                subtitle="Free tier"
+                icon={<FaFolderOpen />}
+                color="#f97316"
+              />
+            </section>
 
-<KPICard
-title="Report Type"
-value={selectedDataset?.reportType || "Custom"}
-subtitle="AI classified"
-icon={<FaTags />}
-color="#22c55e"
-/>
+            <section className="dashboard-grid">
+              <ChartPanel
+                chartData={chartData}
+                labelKey={chartLabelKey}
+                valueKey={chartValueKey}
+              />
 
-<KPICard
-title="Datasets"
-value={`${datasets.length} / 5`}
-subtitle="Free tier"
-icon={<FaFolderOpen />}
-color="#f97316"
-/>
+              <AISummaryCard
+                dataset={selectedDataset}
+                onGenerateSummary={handleGenerateSummary}
+                generating={generatingSummary}
+              />
+            </section>
 
-</section>
-
-          <section className="dashboard-grid">
-            <ChartPanel
-              chartData={chartData}
-              labelKey={chartLabelKey}
-              valueKey={chartValueKey}
+            <DataPreview
+              rows={paginatedRows}
+              columns={allColumns}
+              searchText={searchText}
+              onSearchChange={handleSearchChange}
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPrevPage={handlePrevPage}
+              onNextPage={handleNextPage}
             />
 
-            <AISummaryCard
-              dataset={selectedDataset}
-              onGenerateSummary={handleGenerateSummary}
-              generating={generatingSummary}
+            <RecentUploads
+              datasets={datasets}
+              onSelect={fetchDatasetById}
+              onDelete={handleDeleteDataset}
             />
-          </section>
-
-          <DataPreview
-            rows={paginatedRows}
-            columns={allColumns}
-            searchText={searchText}
-            onSearchChange={handleSearchChange}
-            currentPage={currentPage}
-            totalPages={totalPages}
-            onPrevPage={handlePrevPage}
-            onNextPage={handleNextPage}
-          />
-
-          <RecentUploads
-            datasets={datasets}
-            onSelect={fetchDatasetById}
-            onDelete={handleDeleteDataset}
-          />
-        </>
-      )}
-    </main>
-  </div>
-);
+          </>
+        )}
+      </main>
+    </div>
+  );
 }
 
 export default Dashboard;
