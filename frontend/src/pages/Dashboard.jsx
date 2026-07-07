@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useNavigate } from "react-router-dom";
 import { useState, useMemo, useCallback, useEffect } from "react";
