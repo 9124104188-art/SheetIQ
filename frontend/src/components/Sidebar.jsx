@@ -2,19 +2,18 @@ import {
   FaChartLine,
   FaHome,
   FaDatabase,
-  FaChartBar,
-  FaRobot,
-  FaCog,
   FaQuestionCircle,
 } from "react-icons/fa";
 
 import "../styles/dashboard.css";
 
-function Sidebar({ datasetCount = 2 }) {
-  const progressWidth = `${(datasetCount / 5) * 100}%`;
+function Sidebar({ datasetCount = 0 }) {
+  const maxDatasets = 5;
+  const progressWidth = `${(datasetCount / maxDatasets) * 100}%`;
 
   return (
     <aside className="sidebar">
+      {/* Top */}
       <div className="sidebar-top">
         <div className="sidebar-logo">
           <div className="logo-mark">
@@ -30,38 +29,24 @@ function Sidebar({ datasetCount = 2 }) {
         <nav className="sidebar-nav">
           <a className="active">
             <FaHome />
-            Dashboard
+            <span>Dashboard</span>
           </a>
 
           <a>
             <FaDatabase />
-            Datasets
-          </a>
-
-          <a>
-            <FaChartBar />
-            Reports
-            <span className="coming-soon">Soon</span>
-          </a>
-
-          <a>
-            <FaRobot />
-            AI Insights
-            <span className="coming-soon">Soon</span>
-          </a>
-
-          <a>
-            <FaCog />
-            Settings
+            <span>Datasets</span>
           </a>
         </nav>
       </div>
 
+      {/* Bottom */}
       <div className="sidebar-bottom">
         <div className="sidebar-plan">
-          <p>Free Tier</p>
+          <p>Storage</p>
 
-          <strong>{datasetCount} / 5 datasets used</strong>
+          <strong>
+            {datasetCount} / {maxDatasets} Datasets
+          </strong>
 
           <div className="progress">
             <div
@@ -69,6 +54,18 @@ function Sidebar({ datasetCount = 2 }) {
               style={{ width: progressWidth }}
             />
           </div>
+
+          <small className="plan-text">
+            Free Plan
+          </small>
+        </div>
+
+        <div className="version-card">
+          <small>Version</small>
+
+          <strong>v1.0</strong>
+
+          <span>Powered by AI</span>
         </div>
 
         <div className="help-box">
