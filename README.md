@@ -2,7 +2,7 @@
 
 An AI-powered business intelligence dashboard that transforms Excel and CSV files into interactive charts, KPIs, and AI-generated insights.
 
-🌐 **Live Demo:** :contentReference[oaicite:0]{index=0}
+🌐 **Live Demo:** :https://sheet-iq.vercel.app/
 
 ---
 
